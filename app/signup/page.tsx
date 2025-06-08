@@ -13,68 +13,92 @@ import { Label } from "@/components/ui/label"
 import { AppleIcon, GoogleIcon } from "@/components/icons"
 import { z } from "zod"
 
-const loginSchema = z.object({
-  email: z.string().email({ message: "Email inválido" }),
-  password: z.string().min(6, { message: "A senha deve ter pelo menos 6 caracteres" }),
-})
+const signupSchema = z
+  .object({
+    name: z.string().min(2, { message: "O nome deve ter pelo menos 2 caracteres" }),
+    email: z.string().email({ message: "Email inválido" }),
+    password: z.string().min(6, { message: "A senha deve ter pelo menos 6 caracteres" }),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "As senhas não coincidem",
+    path: ["confirmPassword"],
+  })
 
-type LoginFormValues = z.infer<typeof loginSchema>
+type SignupFormValues = z.infer<typeof signupSchema>
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter()
-  const [formData, setFormData] = useState<LoginFormValues>({
+  const [formData, setFormData] = useState<SignupFormValues>({
+    name: "",
     email: "",
     password: "",
+    confirmPassword: "",
   })
-  const [errors, setErrors] = useState<Partial<LoginFormValues>>({})
+  const [errors, setErrors] = useState<Partial<SignupFormValues>>({})
   const [isLoading, setIsLoading] = useState(false)
-  const [loginError, setLoginError] = useState<string | null>(null)
+  const [signupError, setSignupError] = useState<string | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
     // Clear error when user types
-    if (errors[name as keyof LoginFormValues]) {
+    if (errors[name as keyof SignupFormValues]) {
       setErrors((prev) => ({ ...prev, [name]: undefined }))
     }
-    if (loginError) setLoginError(null)
+    if (signupError) setSignupError(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setLoginError(null)
+    setSignupError(null)
 
     try {
       // Validate form data
-      const validatedData = loginSchema.parse(formData)
+      const validatedData = signupSchema.parse(formData)
+
+      // Create user
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: validatedData.name,
+          email: validatedData.email,
+          password: validatedData.password,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || "Erro ao criar conta")
+      }
 
       // Sign in with credentials
-      const result = await signIn("credentials", {
+      await signIn("credentials", {
         redirect: false,
         email: validatedData.email,
         password: validatedData.password,
       })
-
-      if (result?.error) {
-        setLoginError("Email ou senha inválidos")
-        setIsLoading(false)
-        return
-      }
 
       // Redirect to dashboard on success
       router.push("/dashboard")
     } catch (error) {
       if (error instanceof z.ZodError) {
         // Set form validation errors
-        const fieldErrors: Partial<LoginFormValues> = {}
+        const fieldErrors: Partial<SignupFormValues> = {}
         error.errors.forEach((err) => {
-          const path = err.path[0] as keyof LoginFormValues
+          const path = err.path[0] as keyof SignupFormValues
           fieldErrors[path] = err.message
         })
         setErrors(fieldErrors)
+      } else if (error instanceof Error) {
+        setSignupError(error.message)
       } else {
-        setLoginError("Ocorreu um erro ao fazer login")
+        setSignupError("Ocorreu um erro ao criar sua conta")
       }
       setIsLoading(false)
     }
@@ -88,11 +112,24 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <h1 className="text-center text-3xl font-bold">Atalaia</h1>
-          <p className="text-center text-sm text-muted-foreground">Acesse sua conta para continuar seus estudos.</p>
+          <h1 className="text-center text-3xl font-bold">Criar Conta</h1>
+          <p className="text-center text-sm text-muted-foreground">Crie sua conta para começar a estudar.</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome</Label>
+              <Input
+                id="name"
+                name="name"
+                type="text"
+                placeholder="Seu nome"
+                value={formData.name}
+                onChange={handleChange}
+                required
+              />
+              {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
+            </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -119,9 +156,22 @@ export default function LoginPage() {
               />
               {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
             </div>
-            {loginError && <p className="text-center text-sm text-destructive">{loginError}</p>}
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirmar Senha</Label>
+              <Input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                placeholder="••••••••"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                required
+              />
+              {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword}</p>}
+            </div>
+            {signupError && <p className="text-center text-sm text-destructive">{signupError}</p>}
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Entrando..." : "Entrar"}
+              {isLoading ? "Criando conta..." : "Criar Conta"}
             </Button>
           </form>
 
@@ -135,24 +185,19 @@ export default function LoginPage() {
           <div className="grid gap-2">
             <Button variant="outline" className="flex items-center justify-center gap-2" onClick={handleGoogleSignIn}>
               <GoogleIcon className="h-4 w-4" />
-              <span>Entrar com Google</span>
+              <span>Continuar com Google</span>
             </Button>
             <Button variant="outline" className="flex items-center justify-center gap-2" disabled>
               <AppleIcon className="h-4 w-4" />
-              <span>Entrar com Apple</span>
+              <span>Continuar com Apple</span>
             </Button>
           </div>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
+        <CardFooter className="flex justify-center">
           <div className="text-center text-sm">
-            <Link href="/reset-password" className="text-sm underline underline-offset-4 hover:text-primary">
-              Esqueci minha senha
-            </Link>
-          </div>
-          <div className="text-center text-sm">
-            <span className="text-muted-foreground">Não tem uma conta? </span>
-            <Link href="/signup" className="text-sm underline underline-offset-4 hover:text-primary">
-              Criar uma conta
+            <span className="text-muted-foreground">Já tem uma conta? </span>
+            <Link href="/" className="text-sm underline underline-offset-4 hover:text-primary">
+              Entrar
             </Link>
           </div>
         </CardFooter>
